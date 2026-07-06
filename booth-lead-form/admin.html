@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green-deep:#1F3A2E;
+    --green-mid:#2F5D42;
+    --steel:#3C4650;
+    --steel-light:#6B7580;
+    --orange:#E8631C;
+    --cream:#F6F4EF;
+    --white:#FFFFFF;
+    --line:#DDD9CF;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Inter',sans-serif;
+    background:var(--cream);
+    color:var(--steel);
+  }
+  header{
+    background:var(--green-deep);
+    color:#fff;
+    padding:22px 28px;
+  }
+  header h1{
+    font-family:'Barlow Condensed',sans-serif;
+    font-size:28px;
+    margin:0 0 4px;
+    text-transform:uppercase;
+    letter-spacing:0.5px;
+  }
+  header p{margin:0; color:rgba(255,255,255,0.75); font-size:13.5px;}
+  .wrap{padding:24px 28px 60px; max-width:1200px; margin:0 auto;}
+
+  .toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:18px;
+    align-items:center;
+  }
+  select, input[type=text], button.refresh{
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    padding:9px 12px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:#fff;
+    color:var(--steel);
+  }
+  button.refresh{
+    background:var(--orange);
+    color:#fff;
+    border:none;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .stat-row{
+    display:flex;
+    gap:14px;
+    margin-bottom:20px;
+    flex-wrap:wrap;
+  }
+  .stat-card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 18px;
+    min-width:130px;
+  }
+  .stat-card .num{
+    font-family:'Barlow Condensed',sans-serif;
+    font-size:30px;
+    font-weight:700;
+    color:var(--green-deep);
+  }
+  .stat-card .lbl{
+    font-size:12px;
+    color:var(--steel-light);
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    background:#fff;
+    border-radius:12px;
+    overflow:hidden;
+    border:1px solid var(--line);
+  }
+  th, td{
+    text-align:left;
+    padding:11px 12px;
+    font-size:13.5px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  th{
+    background:var(--cream);
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+    color:var(--steel-light);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:#FAFAF7;}
+
+  .badge{
+    display:inline-block;
+    padding:3px 10px;
+    border-radius:20px;
+    font-size:11.5px;
+    font-weight:700;
+    background:var(--green-mid);
+    color:#fff;
+  }
+  .badge.status-New{background:var(--orange);}
+  .badge.status-Contacted{background:var(--green-mid);}
+  .badge.status-Closed{background:var(--steel-light);}
+
+  .empty-state{
+    text-align:center;
+    padding:60px 20px;
+    color:var(--steel-light);
+  }
+  .note{
+    font-size:12.5px;
+    color:var(--steel-light);
+    margin-top:16px;
+    line-height:1.5;
+  }
+  .note a{color:var(--green-mid);}
+</style>
+</head>
+<body>
+<header>
+  <h1>Booth Lead Dashboard</h1>
+  <p>Pulled live from your Google Sheet backend &middot; filter by salesperson to build their call list</p>
+</header>
+
+<div class="wrap">
+  <div class="stat-row" id="statRow"></div>
+
+  <div class="toolbar">
+    <select id="salesFilter">
+      <option value="">All Salespeople</option>
+    </select>
+    <select id="eventFilter">
+      <option value="">All Events</option>
+    </select>
+    <input type="text" id="searchBox" placeholder="Search name, company, phone, email...">
+    <button class="refresh" id="refreshBtn">Refresh</button>
+  </div>
+
+  <div id="tableWrap">
+    <div class="empty-state">Loading responses...</div>
+  </div>
+
+  <p class="note">
+    This dashboard is read-only. To mark a lead "Contacted" or "Closed," or to add notes,
+    edit the <strong>Status</strong> column directly in your Google Sheet — each salesperson
+    also has their own tab there with just their leads.
+  </p>
+</div>
+
+<script src="config.js"></script>
+<script>
+let allRows = [];
+
+function loadData(){
+  document.getElementById('tableWrap').innerHTML = '<div class="empty-state">Loading responses...</div>';
+  if (!CONFIG.apiUrl || CONFIG.apiUrl.indexOf('PASTE_YOUR') === 0){
+    document.getElementById('tableWrap').innerHTML =
+      '<div class="empty-state">CONFIG.apiUrl is not set yet. Add your Google Apps Script URL to config.js first.</div>';
+    return;
+  }
+  fetch(CONFIG.apiUrl + '?action=list')
+    .then(r => r.json())
+    .then(rows => {
+      allRows = rows || [];
+      populateFilters();
+      render();
+    })
+    .catch(err => {
+      document.getElementById('tableWrap').innerHTML =
+        '<div class="empty-state">Could not load data. Check that the Apps Script web app is deployed and CONFIG.apiUrl is correct.</div>';
+      console.error(err);
+    });
+}
+
+function populateFilters(){
+  const salesSel = document.getElementById('salesFilter');
+  const eventSel = document.getElementById('eventFilter');
+  const salesVal = salesSel.value, eventVal = eventSel.value;
+
+  const salespeople = [...new Set(allRows.map(r => r["Salesperson"]).filter(Boolean))].sort();
+  const events = [...new Set(allRows.map(r => r["Event"]).filter(Boolean))].sort();
+
+  salesSel.innerHTML = '<option value="">All Salespeople</option>' +
+    salespeople.map(s => `<option value="${s}">${s}</option>`).join('');
+  eventSel.innerHTML = '<option value="">All Events</option>' +
+    events.map(ev => `<option value="${ev}">${ev}</option>`).join('');
+
+  salesSel.value = salesVal;
+  eventSel.value = eventVal;
+}
+
+function render(){
+  const salesVal = document.getElementById('salesFilter').value;
+  const eventVal = document.getElementById('eventFilter').value;
+  const search = document.getElementById('searchBox').value.toLowerCase();
+
+  let rows = allRows.filter(r => {
+    if (salesVal && r["Salesperson"] !== salesVal) return false;
+    if (eventVal && r["Event"] !== eventVal) return false;
+    if (search){
+      const hay = `${r["First Name"]} ${r["Last Name"]} ${r["Company"]} ${r["Phone"]} ${r["Email"]}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  // newest first
+  rows.sort((a,b) => new Date(b["Timestamp"]) - new Date(a["Timestamp"]));
+
+  renderStats(rows);
+
+  if (!rows.length){
+    document.getElementById('tableWrap').innerHTML = '<div class="empty-state">No responses match your filters yet.</div>';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Date</th><th>Name</th><th>Company</th><th>Phone</th><th>Email</th>
+        <th>Salesperson</th><th>Status</th><th>Products</th><th>Event</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(r => `
+        <tr>
+          <td>${formatDate(r["Timestamp"])}</td>
+          <td>${r["First Name"]||""} ${r["Last Name"]||""}</td>
+          <td>${r["Company"]||"&mdash;"}</td>
+          <td>${r["Phone"]||""}</td>
+          <td>${r["Email"]||""}</td>
+          <td>${r["Salesperson"]||""}</td>
+          <td><span class="badge status-${r["Status"]||"New"}">${r["Status"]||"New"}</span></td>
+          <td style="max-width:220px;">${r["Products"]||""}${r["Other Product Notes"] ? `<br><em>${r["Other Product Notes"]}</em>` : ''}</td>
+          <td>${r["Event"]||""}</td>
+        </tr>`).join('')}
+    </tbody>`;
+  document.getElementById('tableWrap').innerHTML = '';
+  document.getElementById('tableWrap').appendChild(table);
+}
+
+function renderStats(rows){
+  const total = allRows.length;
+  const filtered = rows.length;
+  const newCount = rows.filter(r => (r["Status"]||"New") === "New").length;
+  const bySales = {};
+  rows.forEach(r => { const s = r["Salesperson"]||"Unassigned"; bySales[s] = (bySales[s]||0)+1; });
+  const topRep = Object.entries(bySales).sort((a,b)=>b[1]-a[1])[0];
+
+  document.getElementById('statRow').innerHTML = `
+    <div class="stat-card"><div class="num">${total}</div><div class="lbl">Total Responses</div></div>
+    <div class="stat-card"><div class="num">${filtered}</div><div class="lbl">Matching Filters</div></div>
+    <div class="stat-card"><div class="num">${newCount}</div><div class="lbl">New / Not Contacted</div></div>
+    <div class="stat-card"><div class="num">${topRep ? topRep[1] : 0}</div><div class="lbl">${topRep ? topRep[0] : "No"} Leads</div></div>
+  `;
+}
+
+function formatDate(ts){
+  const d = new Date(ts);
+  if (isNaN(d)) return ts;
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}) + ' ' +
+         d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+}
+
+document.getElementById('salesFilter').addEventListener('change', render);
+document.getElementById('eventFilter').addEventListener('change', render);
+document.getElementById('searchBox').addEventListener('input', render);
+document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+loadData();
+</script>
+</body>
+</html>
